@@ -10,6 +10,86 @@ const SPECIALITES = [
   "Sciences Politiques","Droit et Grandes Questions du Monde Contemporain",
 ];
 
+// ── GESTION CRÉDITS ───────────────────────────────────────────────────────
+const FREE_LIMIT = 2;
+
+function useCredits() {
+  const [simCount, setSimCount] = useState(() => {
+    if (typeof window === "undefined") return 0;
+    return parseInt(sessionStorage.getItem("sim_count") || "0");
+  });
+  const [paid, setPaid] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return sessionStorage.getItem("paid") === "true";
+  });
+
+  const canSimulate = paid || simCount < FREE_LIMIT;
+  const remaining = paid ? "∞" : Math.max(0, FREE_LIMIT - simCount);
+
+  const useOne = () => {
+    if (!paid) {
+      const n = simCount + 1;
+      setSimCount(n);
+      sessionStorage.setItem("sim_count", n);
+    }
+  };
+
+  const setPaidAccess = () => {
+    setPaid(true);
+    sessionStorage.setItem("paid", "true");
+  };
+
+  return { canSimulate, remaining, simCount, paid, useOne, setPaidAccess };
+}
+
+function PaymentWall({ onBack }) {
+  const [loading, setLoading] = useState(false);
+
+  async function handlePay() {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/create-payment", { method: "POST" });
+      const data = await res.json();
+      if (data.url) window.location.href = data.url;
+      else alert("Erreur — réessayez.");
+    } catch(e) { alert("Erreur de connexion."); }
+    setLoading(false);
+  }
+
+  return (
+    <div style={{ maxWidth: 480, margin: "40px auto", padding: "0 20px" }}>
+      <div style={{ background: "#1C1A2E", borderRadius: 20, padding: "32px 28px", color: "#fff", textAlign: "center" }}>
+        <div style={{ fontSize: 40, marginBottom: 12 }}>⚖️</div>
+        <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>Tu as utilisé tes 2 simulations gratuites</h2>
+        <p style={{ fontSize: 14, color: "#9A8EF5", marginBottom: 24, lineHeight: 1.6 }}>
+          Continue à t'entraîner sans limite jusqu'au 11 juillet pour être prêt le jour J.
+        </p>
+        <div style={{ background: "rgba(255,255,255,.06)", borderRadius: 14, padding: "20px", marginBottom: 24 }}>
+          <div style={{ fontSize: 36, fontWeight: 700, color: "#9A8EF5" }}>4,99 €</div>
+          <div style={{ fontSize: 13, color: "#888", marginTop: 4 }}>paiement unique · accès jusqu'au 11 juillet</div>
+          <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 8 }}>
+            {["Simulations illimitées", "STMG & Série Générale", "3 niveaux de difficulté", "Note sur 20 + axes d'amélioration", "Dictée vocale incluse"].map((f,i) => (
+              <div key={i} style={{ fontSize: 13, color: "#C4BDFF", display: "flex", alignItems: "center", gap: 8, textAlign: "left" }}>
+                <span style={{ color: "#6558D3" }}>✓</span> {f}
+              </div>
+            ))}
+          </div>
+        </div>
+        <button onClick={handlePay} disabled={loading}
+          style={{ width: "100%", padding: "14px", background: "#6558D3", border: "none", borderRadius: 12, color: "#fff", fontSize: 16, fontWeight: 600, cursor: loading ? "not-allowed" : "pointer", marginBottom: 12 }}>
+          {loading ? "Redirection..." : "Accès illimité pour 4,99 €"}
+        </button>
+        <button onClick={onBack} style={{ background: "none", border: "none", color: "#555", fontSize: 13, cursor: "pointer" }}>
+          ← Retour
+        </button>
+      </div>
+      <div style={{ textAlign: "center", marginTop: 16, fontSize: 11, color: "#aaa" }}>
+        🔒 Paiement sécurisé par Stripe · Conçu par Jenny ESTORS
+      </div>
+    </div>
+  );
+}
+
 const COLORS = {
   stmg:    { primary:"#3D2FA0", light:"#EDE9FF", mid:"#6558D3", dark:"#1C1A2E" },
   general: { primary:"#0B6B54", light:"#E1F5EE", mid:"#1D9E75", dark:"#062E22" },
@@ -719,6 +799,35 @@ export default function Home() {
   const [spe1,setS1]=useState(""), [spe2,setS2]=useState("");
   const [etablissement,setEtablissement]=useState(""), [ville,setVille]=useState("");
   const [system,setSys]=useState("");
+  const { canSimulate, remaining, paid, simCount, useOne, setPaidAccess } = useCredits();
+
+  // Vérifier retour de paiement Stripe
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const payment = params.get("payment");
+    const sessionId = params.get("session_id");
+    if (payment === "success" && sessionId) {
+      fetch(`/api/verify-payment?session_id=${sessionId}`)
+        .then(r => r.json())
+        .then(data => {
+          if (data.paid) {
+            setPaidAccess();
+            window.history.replaceState({}, "", "/");
+            setScreen("choix");
+          }
+        }).catch(() => {});
+    }
+  }, []);
+
+  function handleStart(q, t, s1, s2, sys, etab, vil) {
+    if (!canSimulate) { setScreen("payment"); return; }
+    useOne();
+    setQ(q); setT(t); setS1(s1||""); setS2(s2||"");
+    setEtablissement(etab||""); setVille(vil||"");
+    setSys(sys);
+    setScreen("chat");
+  }
 
   function restart() { setScreen("choix");setFiliere("");setQ("");setT("");setS1("");setS2("");setEtablissement("");setVille("");setSys(""); }
   const c=filiere?COLORS[filiere]:COLORS.stmg;
@@ -753,10 +862,20 @@ export default function Home() {
     </div>
 
     <div style={{maxWidth:780,margin:"0 auto",padding:"22px 18px 60px"}}>
-      {screen==="choix"   && <ChoixFiliere onChoix={f=>{setFiliere(f);setScreen("setup");}}/>}
-      {screen==="setup"   && filiere==="stmg"    && <SetupSTMG    onStart={(q,t,lvl)=>{setQ(q);setT(t);setSys(buildPromptSTMG(q,t,lvl));setScreen("chat");}} onBack={()=>setScreen("choix")}/>}
-      {screen==="setup"   && filiere==="general" && <SetupGeneral onStart={(q,t,s1,s2,lvl,etab,vil)=>{setQ(q);setT(t);setS1(s1);setS2(s2);setEtablissement(etab);setVille(vil);setSys(buildPromptGeneral(q,t,s1,s2,lvl));setScreen("chat");}} onBack={()=>setScreen("choix")}/>}
+      {screen==="choix" && (
+        <>
+          <div style={{textAlign:"center",marginBottom:16}}>
+            <span style={{fontSize:12,color:paid?"#0B6B54":"#6558D3",background:paid?"#E1F5EE":"#EDE9FF",padding:"4px 14px",borderRadius:99,fontFamily:"monospace"}}>
+              {paid ? "⭐ Accès illimité jusqu'au 11 juillet" : simCount >= FREE_LIMIT ? "🔒 Essai gratuit terminé" : `✅ ${remaining} simulation${remaining > 1 ? "s" : ""} gratuite${remaining > 1 ? "s" : ""} restante${remaining > 1 ? "s" : ""}`}
+            </span>
+          </div>
+          <ChoixFiliere onChoix={f=>{setFiliere(f);setScreen("setup");}}/>
+        </>
+      )}
+      {screen==="setup"   && filiere==="stmg"    && <SetupSTMG    onStart={(q,t,lvl)=>handleStart(q,t,"","",buildPromptSTMG(q,t,lvl),"","")} onBack={()=>setScreen("choix")}/>}
+      {screen==="setup"   && filiere==="general" && <SetupGeneral onStart={(q,t,s1,s2,lvl,etab,vil)=>handleStart(q,t,s1,s2,buildPromptGeneral(q,t,s1,s2,lvl),etab,vil)} onBack={()=>setScreen("choix")}/>}
       {screen==="chat"    && <ChatScreen system={system} question={question} filiere={filiere} spe1={spe1} spe2={spe2} etablissement={etablissement} ville={ville} onRestart={restart}/>}
+      {screen==="payment" && <PaymentWall onBack={()=>setScreen("choix")}/>}
       {screen==="legal"   && <LegalPage onBack={backFromLegal}/>}
       {screen!=="legal"   && <Footer onLegal={goLegal}/>}
     </div>
