@@ -5,19 +5,17 @@ export default async function handler(req, res) {
 
   const dashPwd =
     process.env.DASHBOARD_PASSWORD ||
-    process.env["TABLEAU DE BORD_MOT_DE_PASSE"] ||
     process.env.TABLEAU_DE_BORD_MOT_DE_PASSE ||
     "JennyGO2025";
 
   const supabaseUrl =
     process.env.SUPABASE_URL ||
-    process.env["URL SUPABASE"] ||
     process.env.URL_SUPABASE;
 
   const supabaseKey = process.env.SUPABASE_ANON_KEY;
 
   if (pwd !== dashPwd) {
-    return res.status(401).json({ error: "Non autorisé" });
+    return res.status(401).json({ error: "Non autorise" });
   }
 
   if (!supabaseUrl || !supabaseKey) {
@@ -35,7 +33,7 @@ export default async function handler(req, res) {
       "Prefer": "count=exact",
     };
 
-    // 1. Total exact via Content-Range
+    // 1. Total exact
     const totalRes = await fetch(`${base}?select=id&limit=1`, { headers });
     const contentRange = totalRes.headers.get("content-range");
     const total = contentRange ? parseInt(contentRange.split("/")[1]) : 0;
@@ -45,12 +43,12 @@ export default async function handler(req, res) {
     const stmgRange = stmgRes.headers.get("content-range");
     const stmg = stmgRange ? parseInt(stmgRange.split("/")[1]) : 0;
 
-    // 3. Total Général exact
+    // 3. Total General exact
     const generalRes = await fetch(`${base}?select=id&filiere=eq.general&limit=1`, { headers });
     const generalRange = generalRes.headers.get("content-range");
     const general = generalRange ? parseInt(generalRange.split("/")[1]) : 0;
 
-    // 4. Note moyenne sur toutes les simulations avec note
+    // 4. Note moyenne
     const notesRes = await fetch(
       `${base}?select=note_jury&note_jury=not.is.null&limit=500`,
       { headers: { "apikey": supabaseKey, "Authorization": `Bearer ${supabaseKey}` } }
@@ -63,7 +61,7 @@ export default async function handler(req, res) {
       ? (notes.reduce((a, b) => a + b, 0) / notes.length).toFixed(1)
       : null;
 
-    // 5. 20 derniers feedbacks avec toutes les colonnes (dont spe1, spe2, etablissement, ville)
+    // 5. 20 derniers feedbacks avec toutes les colonnes
     const feedRes = await fetch(
       `${base}?select=filiere,question,spe1,spe2,etablissement,ville,note_percue,note_jury,utilite,manque,created_at&order=created_at.desc&limit=20`,
       { headers: { "apikey": supabaseKey, "Authorization": `Bearer ${supabaseKey}` } }
