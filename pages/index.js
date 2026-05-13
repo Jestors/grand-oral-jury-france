@@ -454,6 +454,7 @@ function LevelSelector({ level, setLevel, color }) {
 // ── SETUP STMG ────────────────────────────────────────────────────────────
 function SetupSTMG({onStart,onBack}) {
   const [q,setQ]=useState(""), [t,setT]=useState(""), [level,setLevel]=useState("intermediaire");
+  const [etablissement,setEtablissement]=useState(""), [ville,setVille]=useState("");
   const c=COLORS.stmg, can=q.trim().length>10&&t.trim().length>50;
   return <div>
     <button onClick={onBack} style={{background:"none",border:"none",cursor:"pointer",color:"#888",fontSize:13,marginBottom:20,display:"flex",alignItems:"center",gap:6}}>← Retour</button>
@@ -472,8 +473,29 @@ function SetupSTMG({onStart,onBack}) {
       value={t} onChange={setT} color={c.primary}
       placeholder={"Collez ici votre présentation, ou utilisez le micro ci-dessous...\n\nAu cours de mon année de terminale, j'ai étudié l'entreprise..."}
     />
+    <div style={{background:"#F4F3F8",borderRadius:12,padding:"14px 16px",marginBottom:20}}>
+      <div style={{fontSize:11,color:"#888",fontFamily:"monospace",letterSpacing:".06em",textTransform:"uppercase",marginBottom:12}}>
+        🏫 Votre établissement <span style={{fontWeight:400,color:"#bbb"}}>(optionnel)</span>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+        <div>
+          <div style={{fontSize:11,color:"#666",marginBottom:5}}>Nom du lycée</div>
+          <input type="text" value={etablissement} onChange={e=>setEtablissement(e.target.value)}
+            placeholder="Ex : Lycée Henri IV"
+            style={{width:"100%",padding:"9px 12px",border:`1.5px solid ${etablissement?"#9CA3AF":"#E8E7F0"}`,borderRadius:8,fontSize:13,fontFamily:"inherit",color:"#1C1A2E",outline:"none",background:"#fff"}}
+          />
+        </div>
+        <div>
+          <div style={{fontSize:11,color:"#666",marginBottom:5}}>Ville</div>
+          <input type="text" value={ville} onChange={e=>setVille(e.target.value)}
+            placeholder="Ex : Paris"
+            style={{width:"100%",padding:"9px 12px",border:`1.5px solid ${ville?"#9CA3AF":"#E8E7F0"}`,borderRadius:8,fontSize:13,fontFamily:"inherit",color:"#1C1A2E",outline:"none",background:"#fff"}}
+          />
+        </div>
+      </div>
+    </div>
     <LevelSelector level={level} setLevel={setLevel} color={c.primary}/>
-    <button onClick={()=>onStart(q.trim(),t.trim(),level)} disabled={!can}
+    <button onClick={()=>onStart(q.trim(),t.trim(),level,etablissement.trim(),ville.trim())} disabled={!can}
       style={{width:"100%",padding:"14px",background:can?c.primary:"#C8C7D4",color:"#fff",border:"none",borderRadius:12,fontSize:15,fontWeight:500,cursor:can?"pointer":"not-allowed",display:"flex",alignItems:"center",justifyContent:"center",gap:8,transition:"all .2s"}}>
       <span>⚖️ Le jury prend la parole</span><span style={{fontSize:18}}>→</span>
     </button>
@@ -901,7 +923,7 @@ export default function Home() {
           <ChoixFiliere onChoix={f=>{setFiliere(f);setScreen("setup");}}/>
         </>
       )}
-      {screen==="setup"   && filiere==="stmg"    && <SetupSTMG    onStart={(q,t,lvl)=>handleStart(q,t,"","",buildPromptSTMG(q,t,lvl),"","")} onBack={()=>setScreen("choix")}/>}
+      {screen==="setup"   && filiere==="stmg"    && <SetupSTMG    onStart={(q,t,lvl,etab,vil)=>handleStart(q,t,"","",buildPromptSTMG(q,t,lvl),etab,vil)} onBack={()=>setScreen("choix")}/>}
       {screen==="setup"   && filiere==="general" && <SetupGeneral onStart={(q,t,s1,s2,lvl,etab,vil)=>handleStart(q,t,s1,s2,buildPromptGeneral(q,t,s1,s2,lvl),etab,vil)} onBack={()=>setScreen("choix")}/>}
       {screen==="chat"    && <ChatScreen system={system} question={question} filiere={filiere} spe1={spe1} spe2={spe2} etablissement={etablissement} ville={ville} onRestart={restart}/>}
       {screen==="payment" && <PaymentWall onBack={()=>setScreen("choix")} onSuccess={()=>setScreen("choix")}/>}
