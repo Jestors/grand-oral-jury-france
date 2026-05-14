@@ -10,90 +10,192 @@ const SPECIALITES = [
   "Sciences Politiques","Droit et Grandes Questions du Monde Contemporain",
 ];
 
-// ── GESTION CRÉDITS ───────────────────────────────────────────────────────
+// ── CONSTANTES CRÉDITS ────────────────────────────────────────────────────
 const FREE_LIMIT = 2;
 const PAID_CREDITS = 20;
 
-function useCredits() {
-  const [simCount, setSimCount] = useState(() => {
-    if (typeof window === "undefined") return 0;
-    return parseInt(sessionStorage.getItem("sim_count") || "0");
-  });
-  const [paidCredits, setPaidCredits] = useState(() => {
-    if (typeof window === "undefined") return 0;
-    return parseInt(sessionStorage.getItem("paid_credits") || "0");
-  });
+// ── MODAL EMAIL ───────────────────────────────────────────────────────────
+function EmailModal({ onConfirmed }) {
+  const [email, setEmail]     = useState("");
+  const [error, setError]     = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const totalRemaining = paidCredits > 0 ? paidCredits : Math.max(0, FREE_LIMIT - simCount);
-  const canSimulate = simCount < FREE_LIMIT || paidCredits > 0;
-
-  const useOne = () => {
-    if (paidCredits > 0) {
-      const newPaid = paidCredits - 1;
-      setPaidCredits(newPaid);
-      sessionStorage.setItem("paid_credits", newPaid);
-    } else {
-      const newCount = simCount + 1;
-      setSimCount(newCount);
-      sessionStorage.setItem("sim_count", newCount);
+  async function submit() {
+    const val = email.trim().toLowerCase();
+    if (!val || !val.includes("@") || !val.includes(".")) {
+      setError("Adresse email invalide.");
+      return;
     }
-  };
+    setError("");
+    setLoading(true);
+    try {
+      const res  = await fetch("/api/check-user", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: val }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erreur serveur");
+      localStorage.setItem("go_email", val);
+      onConfirmed({ email: val, ...data });
+    } catch (e) {
+      setError("Erreur serveur — réessayez.");
+    }
+    setLoading(false);
+  }
 
-  const addPaidCredits = (n) => {
-    const newPaid = paidCredits + n;
-    setPaidCredits(newPaid);
-    sessionStorage.setItem("paid_credits", newPaid);
-  };
-
-  return { simCount, paidCredits, totalRemaining, canSimulate, useOne, addPaidCredits };
+  return (
+    <div style={{
+      position:"fixed", inset:0, background:"rgba(0,0,0,.72)",
+      display:"flex", alignItems:"center", justifyContent:"center", zIndex:9999,
+    }}>
+      <div style={{
+        background:"#fff", borderRadius:20, padding:"36px 28px",
+        maxWidth:420, width:"90%", textAlign:"center",
+        boxShadow:"0 24px 64px rgba(0,0,0,.3)",
+      }}>
+        <div style={{ fontSize:38, marginBottom:12 }}>🎓</div>
+        <h2 style={{ fontSize:20, fontWeight:700, color:"#1C1A2E", marginBottom:8 }}>
+          Bienvenue sur le simulateur<br/>Grand Oral
+        </h2>
+        <p style={{ fontSize:13, color:"#666", marginBottom:24, lineHeight:1.7 }}>
+          Entrez votre email pour accéder à vos <strong>2 simulations gratuites</strong>
+          <br/>et retrouver votre accès sur tous vos appareils.
+        </p>
+        <input
+          type="email"
+          value={email}
+          onChange={e => setEmail(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && submit()}
+          placeholder="prenom.nom@lycee.fr"
+          autoComplete="email"
+          style={{
+            width:"100%", padding:"11px 14px", fontSize:14,
+            border:`2px solid ${error ? "#DC2626" : "#E8E7F0"}`,
+            borderRadius:10, outline:"none", boxSizing:"border-box",
+            marginBottom:8, fontFamily:"inherit",
+            transition:"border-color .2s",
+          }}
+        />
+        {error && <p style={{ color:"#DC2626", fontSize:12, marginBottom:8 }}>{error}</p>}
+        <button
+          onClick={submit}
+          disabled={loading}
+          style={{
+            width:"100%", padding:"13px", background: loading ? "#9CA3AF" : "#6558D3",
+            color:"#fff", border:"none", borderRadius:10, fontSize:15,
+            fontWeight:600, cursor: loading ? "not-allowed" : "pointer",
+            marginTop:4, transition:"background .2s",
+          }}
+        >
+          {loading ? "Vérification…" : "Commencer →"}
+        </button>
+        <p style={{ fontSize:11, color:"#bbb", marginTop:14, lineHeight:1.6 }}>
+          Pas de spam. Email utilisé uniquement pour gérer vos simulations.<br/>
+          Conforme RGPD — voir mentions légales.
+        </p>
+      </div>
+    </div>
+  );
 }
 
-function PaymentWall({ onBack, onSuccess }) {
+// ── HOOK CREDITS (serveur) ────────────────────────────────────────────────
+function useCredits(userEmail) {
+  // simCount & isPaid viennent du serveur via check-user, on les stocke localement
+  // comme cache d'affichage. La vraie limite est vérifiée dans use-simulation côté serveur.
+  const [simCount,    setSimCount]    = useState(0);
+  const [isPaid,      setIsPaid]      = useState(false);
+  const [initialized, setInitialized] = useState(false);
+
+  // Hydratation depuis les données renvoyées par check-user
+  function hydrate({ simulations_used, is_paid }) {
+    setSimCount(simulations_used ?? 0);
+    setIsPaid(is_paid ?? false);
+    setInitialized(true);
+  }
+
+  const totalRemaining = isPaid ? PAID_CREDITS : Math.max(0, FREE_LIMIT - simCount);
+  const canSimulate    = isPaid || simCount < FREE_LIMIT;
+
+  // Appel use-simulation avant de lancer : retourne true si autorisé
+  async function useOne() {
+    if (!userEmail) return false;
+    try {
+      const res  = await fetch("/api/use-simulation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: userEmail }),
+      });
+      const data = await res.json();
+      if (res.status === 403 || data.limit_reached) return false;
+      if (res.ok) {
+        setSimCount(data.simulations_used);
+        setIsPaid(data.is_paid);
+        return true;
+      }
+      return false;
+    } catch { return false; }
+  }
+
+  function markPaid() {
+    setIsPaid(true);
+    setSimCount(0);
+  }
+
+  return { simCount, isPaid, totalRemaining, canSimulate, useOne, hydrate, initialized, markPaid };
+}
+
+// ── PAYWALL ───────────────────────────────────────────────────────────────
+function PaymentWall({ onBack, email }) {
   const [loading, setLoading] = useState(false);
 
   async function handlePay() {
     setLoading(true);
     try {
-      const res = await fetch("/api/create-payment", { method: "POST" });
+      const res  = await fetch("/api/create-payment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
       const data = await res.json();
       if (data.url) window.location.href = data.url;
-    } catch(e) {
+    } catch {
       alert("Erreur de paiement — réessayez.");
     }
     setLoading(false);
   }
 
   return (
-    <div style={{ maxWidth: 480, margin: "40px auto", padding: "0 20px" }}>
-      <div style={{ background: "#1C1A2E", borderRadius: 20, padding: "32px 28px", color: "#fff", textAlign: "center" }}>
-        <div style={{ fontSize: 40, marginBottom: 12 }}>⚖️</div>
-        <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>
+    <div style={{ maxWidth:480, margin:"40px auto", padding:"0 20px" }}>
+      <div style={{ background:"#1C1A2E", borderRadius:20, padding:"32px 28px", color:"#fff", textAlign:"center" }}>
+        <div style={{ fontSize:40, marginBottom:12 }}>⚖️</div>
+        <h2 style={{ fontSize:22, fontWeight:700, marginBottom:8 }}>
           Tu as utilisé tes 2 simulations gratuites
         </h2>
-        <p style={{ fontSize: 14, color: "#9A8EF5", marginBottom: 24, lineHeight: 1.6 }}>
+        <p style={{ fontSize:14, color:"#9A8EF5", marginBottom:24, lineHeight:1.6 }}>
           Continue à t'entraîner sans limite jusqu'au 11 juillet pour être prêt le jour J.
         </p>
-        <div style={{ background: "rgba(255,255,255,.06)", borderRadius: 14, padding: "20px", marginBottom: 24 }}>
-          <div style={{ fontSize: 36, fontWeight: 700, color: "#9A8EF5" }}>4,99 €</div>
-          <div style={{ fontSize: 13, color: "#888", marginTop: 4 }}>paiement unique · accès jusqu'au 11 juillet</div>
-          <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 8 }}>
-            {["Simulations illimitées", "STMG & Série Générale", "3 niveaux de difficulté", "Note sur 20 + axes d'amélioration", "Dictée vocale incluse"].map((f,i) => (
-              <div key={i} style={{ fontSize: 13, color: "#C4BDFF", display: "flex", alignItems: "center", gap: 8, textAlign: "left" }}>
-                <span style={{ color: "#6558D3" }}>✓</span> {f}
+        <div style={{ background:"rgba(255,255,255,.06)", borderRadius:14, padding:"20px", marginBottom:24 }}>
+          <div style={{ fontSize:36, fontWeight:700, color:"#9A8EF5" }}>4,99 €</div>
+          <div style={{ fontSize:13, color:"#888", marginTop:4 }}>paiement unique · accès jusqu'au 11 juillet</div>
+          <div style={{ marginTop:16, display:"flex", flexDirection:"column", gap:8 }}>
+            {["Simulations illimitées","STMG & Série Générale","3 niveaux de difficulté","Note sur 20 + axes d'amélioration","Dictée vocale incluse"].map((f,i) => (
+              <div key={i} style={{ fontSize:13, color:"#C4BDFF", display:"flex", alignItems:"center", gap:8, textAlign:"left" }}>
+                <span style={{ color:"#6558D3" }}>✓</span> {f}
               </div>
             ))}
           </div>
         </div>
         <button onClick={handlePay} disabled={loading}
-          style={{ width: "100%", padding: "14px", background: "#6558D3", border: "none", borderRadius: 12, color: "#fff", fontSize: 16, fontWeight: 600, cursor: loading ? "not-allowed" : "pointer", marginBottom: 12 }}>
+          style={{ width:"100%", padding:"14px", background:"#6558D3", border:"none", borderRadius:12, color:"#fff", fontSize:16, fontWeight:600, cursor:loading?"not-allowed":"pointer", marginBottom:12 }}>
           {loading ? "Redirection..." : "Accès illimité pour 4,99 €"}
         </button>
         <button onClick={onBack}
-          style={{ background: "none", border: "none", color: "#555", fontSize: 13, cursor: "pointer" }}>
+          style={{ background:"none", border:"none", color:"#555", fontSize:13, cursor:"pointer" }}>
           ← Retour
         </button>
       </div>
-      <div style={{ textAlign: "center", marginTop: 16, fontSize: 11, color: "#aaa" }}>
+      <div style={{ textAlign:"center", marginTop:16, fontSize:11, color:"#aaa" }}>
         🔒 Paiement sécurisé par Stripe · Conçu par Jenny ESTORS
       </div>
     </div>
@@ -796,7 +898,7 @@ function ChoixFiliere({onChoix}) {
 // ── PAGE MENTIONS LÉGALES ─────────────────────────────────────────────────
 function LegalPage({ onBack }) {
   return (
-    <div style={{ maxWidth: 680, margin: "0 auto", padding: "0 0 60px" }}>
+    <div style={{ maxWidth:680, margin:"0 auto", padding:"0 0 60px" }}>
       <button onClick={onBack} style={{ background:"none", border:"none", cursor:"pointer", color:"#888", fontSize:13, marginBottom:24, display:"flex", alignItems:"center", gap:6 }}>
         ← Retour
       </button>
@@ -804,13 +906,13 @@ function LegalPage({ onBack }) {
       <p style={{ fontSize:12, color:"#888", marginBottom:32, fontFamily:"monospace" }}>Dernière mise à jour : mai 2026</p>
       {[
         { title: "1. Responsable du traitement", content: `Cette application est conçue et administrée par Jenny ESTORS, Professeur d'Économie-Gestion.\nElle est hébergée sur Vercel (vercel.com) et utilise l'API Anthropic pour générer les questions du jury.` },
-        { title: "2. Données collectées", content: `L'application collecte uniquement les données suivantes, de façon anonyme :\n• La filière choisie (STMG ou Série Générale)\n• Le texte de votre question de gestion\n• La note indicative obtenue\n• Votre retour sur la simulation (boutons de feedback)\n• La date et l'heure de la simulation\n\nAucun nom, prénom, email ou identifiant personnel n'est collecté.` },
+        { title: "2. Données collectées", content: `L'application collecte les données suivantes :\n• Votre adresse email (pour gérer l'accès aux simulations)\n• La filière choisie (STMG ou Série Générale)\n• Le texte de votre question de gestion\n• La note indicative obtenue\n• Votre retour sur la simulation (boutons de feedback)\n• La date et l'heure de la simulation\n\nL'email est utilisé uniquement pour limiter les simulations gratuites et permettre l'accès payant multi-appareils.` },
         { title: "3. Données vocales", content: `La dictée vocale fonctionne entièrement via l'API Web Speech de votre navigateur.\n\n✅ Aucun audio n'est enregistré ni transmis à nos serveurs.\n✅ La reconnaissance vocale est effectuée localement par votre navigateur.\n✅ Seul le texte transcrit est utilisé pour la simulation.` },
-        { title: "4. Finalité du traitement", content: `Les données collectées sont utilisées exclusivement pour :\n• Améliorer la qualité pédagogique de l'outil\n• Produire des statistiques anonymes d'utilisation\n• Aucune donnée n'est revendue ni partagée avec des tiers.` },
-        { title: "5. Durée de conservation", content: `Les données anonymes sont conservées pour une durée maximale de 12 mois, puis supprimées automatiquement.` },
+        { title: "4. Finalité du traitement", content: `Les données collectées sont utilisées exclusivement pour :\n• Gérer l'accès aux simulations gratuites et payantes\n• Améliorer la qualité pédagogique de l'outil\n• Produire des statistiques anonymes d'utilisation\n• Aucune donnée n'est revendue ni partagée avec des tiers.` },
+        { title: "5. Durée de conservation", content: `Les données sont conservées pour une durée maximale de 12 mois, puis supprimées automatiquement.` },
         { title: "6. Droits des utilisateurs (RGPD)", content: `Conformément au RGPD, vous disposez des droits d'accès, rectification, effacement et opposition.\n\nPour exercer ces droits, contactez : jestors@lyceelyautey.org` },
-        { title: "7. Cookies", content: `Cette application n'utilise pas de cookies de tracking ou publicitaires.\nSeules des données de session sont stockées localement via sessionStorage — effacées à la fermeture de l'onglet.` },
-        { title: "8. Hébergement", content: `L'application est hébergée par Vercel Inc.\nLes données de simulation sont stockées dans Supabase (serveurs en Europe — Irlande).` },
+        { title: "7. Cookies", content: `Cette application n'utilise pas de cookies de tracking ou publicitaires.\nVotre email est mémorisé via localStorage pour éviter de le ressaisir à chaque visite.` },
+        { title: "8. Hébergement", content: `L'application est hébergée par Vercel Inc.\nLes données sont stockées dans Supabase (serveurs en Europe — Irlande).` },
       ].map((section, i) => (
         <div key={i} style={{ marginBottom: 28 }}>
           <h2 style={{ fontSize:15, fontWeight:700, color:"#3D2FA0", marginBottom:8 }}>{section.title}</h2>
@@ -832,7 +934,7 @@ function Footer({ onLegal }) {
         Conçu par <strong style={{ color:"#3D2FA0" }}>Jenny ESTORS</strong> · Professeur d'Économie-Gestion · © 2026
       </p>
       <p style={{ fontSize:11, color:"#aaa" }}>
-        🔒 Aucun audio enregistré · Données anonymes uniquement ·{" "}
+        🔒 Aucun audio enregistré · Email protégé (RGPD) ·{" "}
         <button onClick={onLegal} style={{ background:"none", border:"none", cursor:"pointer", color:"#3D2FA0", fontSize:11, textDecoration:"underline", padding:0 }}>
           Mentions légales & Confidentialité
         </button>
@@ -843,45 +945,130 @@ function Footer({ onLegal }) {
 
 // ── APP ───────────────────────────────────────────────────────────────────
 export default function Home() {
-  const [screen,setScreen]=useState("choix"), [filiere,setFiliere]=useState("");
-  const [prevScreen,setPrevScreen]=useState("choix");
+  // ── Auth state ──────────────────────────────────────────────────────────
+  const [userEmail, setUserEmail]   = useState(null);
+  const [authReady, setAuthReady]   = useState(false); // true once we've checked localStorage
+
+  // ── App state ───────────────────────────────────────────────────────────
+  const [screen,setScreen]         = useState("choix");
+  const [filiere,setFiliere]       = useState("");
+  const [prevScreen,setPrevScreen] = useState("choix");
   const goLegal = () => { setPrevScreen(screen); setScreen("legal"); };
   const backFromLegal = () => setScreen(prevScreen);
-  const [question,setQ]=useState(""), [trans,setT]=useState("");
-  const [spe1,setS1]=useState(""), [spe2,setS2]=useState("");
-  const [etablissement,setEtablissement]=useState(""), [ville,setVille]=useState("");
-  const [system,setSys]=useState("");
-  const { canSimulate, useOne, addPaidCredits, totalRemaining, simCount, paidCredits } = useCredits();
+  const [question,setQ]   = useState("");
+  const [trans,setT]       = useState("");
+  const [spe1,setS1]       = useState("");
+  const [spe2,setS2]       = useState("");
+  const [etablissement,setEtablissement] = useState("");
+  const [ville,setVille]   = useState("");
+  const [system,setSys]    = useState("");
 
+  const { simCount, isPaid, totalRemaining, canSimulate, useOne, hydrate, markPaid } = useCredits(userEmail);
+
+  // ── 1. Initialisation auth au chargement ────────────────────────────────
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    const payment = params.get("payment");
+
+    // Vérifier retour paiement Stripe AVANT d'afficher le modal
+    const params    = new URLSearchParams(window.location.search);
+    const payment   = params.get("payment");
     const sessionId = params.get("session_id");
-    if (payment === "success" && sessionId) {
-      fetch(`/api/verify-payment?session_id=${sessionId}`)
-        .then(r => r.json())
-        .then(data => {
+    const savedEmail = localStorage.getItem("go_email");
+
+    async function init() {
+      // Cas : retour paiement Stripe
+      if (payment === "success" && sessionId && savedEmail) {
+        try {
+          const res  = await fetch(`/api/verify-payment?session_id=${sessionId}&email=${encodeURIComponent(savedEmail)}`);
+          const data = await res.json();
           if (data.paid) {
-            addPaidCredits(PAID_CREDITS);
+            markPaid();
             window.history.replaceState({}, "", "/");
-            setScreen("choix");
           }
-        }).catch(() => {});
+        } catch {}
+      }
+
+      // Cas : email déjà connu → vérifier statut côté serveur
+      if (savedEmail) {
+        try {
+          const res  = await fetch("/api/check-user", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: savedEmail }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            hydrate(data);
+            setUserEmail(savedEmail);
+          } else {
+            // Erreur serveur → on garde l'email mais on affiche quand même
+            setUserEmail(savedEmail);
+          }
+        } catch {
+          setUserEmail(savedEmail);
+        }
+      }
+
+      setAuthReady(true);
     }
+
+    init();
   }, []);
 
-  function handleStart(q, t, s1, s2, sys, etab, vil) {
-    if (!canSimulate) { setScreen("payment"); return; }
-    useOne();
+  // ── 2. Callback quand l'utilisateur confirme son email ──────────────────
+  function handleEmailConfirmed({ email, simulations_used, is_paid }) {
+    hydrate({ simulations_used, is_paid });
+    setUserEmail(email);
+    setAuthReady(true);
+  }
+
+  // ── 3. Lancer une simulation ─────────────────────────────────────────────
+  async function handleStart(q, t, s1, s2, sys, etab, vil) {
+    // Vérif côté serveur (non contournable)
+    const allowed = await useOne();
+    if (!allowed) {
+      setScreen("payment");
+      return;
+    }
     setQ(q); setT(t); setS1(s1||""); setS2(s2||"");
     setEtablissement(etab||""); setVille(vil||"");
     setSys(sys);
     setScreen("chat");
   }
 
-  function restart() { setScreen("choix");setFiliere("");setQ("");setT("");setS1("");setS2("");setEtablissement("");setVille("");setSys(""); }
-  const c=filiere?COLORS[filiere]:COLORS.stmg;
+  function restart() {
+    setScreen("choix"); setFiliere(""); setQ(""); setT(""); setS1(""); setS2("");
+    setEtablissement(""); setVille(""); setSys("");
+  }
+
+  const c = filiere ? COLORS[filiere] : COLORS.stmg;
+
+  // ── Affichage ─────────────────────────────────────────────────────────────
+  // Pendant la vérification initiale : écran vide ou loader léger
+  if (!authReady) {
+    return (
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100vh", background:"#FDFCFF" }}>
+        <div style={{ textAlign:"center" }}>
+          <div style={{ fontSize:36, marginBottom:12 }}>⚖️</div>
+          <div style={{ fontSize:13, color:"#888", fontFamily:"monospace" }}>Chargement…</div>
+        </div>
+      </div>
+    );
+  }
+
+  // Si email non encore renseigné : modal bloquant
+  if (!userEmail) {
+    return (
+      <>
+        <Head>
+          <title>Simulateur Jury — Grand Oral · Jenny ESTORS</title>
+          <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        </Head>
+        <style>{`*{box-sizing:border-box;margin:0;padding:0}body{background:#FDFCFF;font-family:system-ui,-apple-system,sans-serif}`}</style>
+        <EmailModal onConfirmed={handleEmailConfirmed} />
+      </>
+    );
+  }
 
   return <>
     <Head>
@@ -916,8 +1103,13 @@ export default function Home() {
       {screen==="choix" && (
         <>
           <div style={{textAlign:"center",marginBottom:16}}>
-            <span style={{fontSize:12,color:paidCredits>0?"#0B6B54":"#6558D3",background:paidCredits>0?"#E1F5EE":"#EDE9FF",padding:"4px 14px",borderRadius:99,fontFamily:"monospace"}}>
-              {paidCredits > 0 ? `⭐ Accès illimité jusqu'au 11 juillet` : simCount >= FREE_LIMIT ? "🔒 Essai gratuit terminé" : `✅ ${FREE_LIMIT - simCount} simulation${FREE_LIMIT - simCount > 1 ? "s" : ""} gratuite${FREE_LIMIT - simCount > 1 ? "s" : ""} restante${FREE_LIMIT - simCount > 1 ? "s" : ""}`}
+            <span style={{fontSize:12,color:isPaid?"#0B6B54":"#6558D3",background:isPaid?"#E1F5EE":"#EDE9FF",padding:"4px 14px",borderRadius:99,fontFamily:"monospace"}}>
+              {isPaid
+                ? `⭐ Accès illimité jusqu'au 11 juillet`
+                : simCount >= FREE_LIMIT
+                  ? "🔒 Essai gratuit terminé"
+                  : `✅ ${FREE_LIMIT - simCount} simulation${FREE_LIMIT - simCount > 1 ? "s" : ""} gratuite${FREE_LIMIT - simCount > 1 ? "s" : ""} restante${FREE_LIMIT - simCount > 1 ? "s" : ""}`
+              }
             </span>
           </div>
           <ChoixFiliere onChoix={f=>{setFiliere(f);setScreen("setup");}}/>
@@ -926,7 +1118,7 @@ export default function Home() {
       {screen==="setup"   && filiere==="stmg"    && <SetupSTMG    onStart={(q,t,lvl,etab,vil)=>handleStart(q,t,"","",buildPromptSTMG(q,t,lvl),etab,vil)} onBack={()=>setScreen("choix")}/>}
       {screen==="setup"   && filiere==="general" && <SetupGeneral onStart={(q,t,s1,s2,lvl,etab,vil)=>handleStart(q,t,s1,s2,buildPromptGeneral(q,t,s1,s2,lvl),etab,vil)} onBack={()=>setScreen("choix")}/>}
       {screen==="chat"    && <ChatScreen system={system} question={question} filiere={filiere} spe1={spe1} spe2={spe2} etablissement={etablissement} ville={ville} onRestart={restart}/>}
-      {screen==="payment" && <PaymentWall onBack={()=>setScreen("choix")} onSuccess={()=>setScreen("choix")}/>}
+      {screen==="payment" && <PaymentWall onBack={()=>setScreen("choix")} email={userEmail}/>}
       {screen==="legal"   && <LegalPage onBack={backFromLegal}/>}
       {screen!=="legal"   && <Footer onLegal={goLegal}/>}
     </div>
