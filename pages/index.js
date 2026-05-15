@@ -910,7 +910,7 @@ function LegalPage({ onBack }) {
         { title: "3. Données vocales", content: `La dictée vocale fonctionne entièrement via l'API Web Speech de votre navigateur.\n\n✅ Aucun audio n'est enregistré ni transmis à nos serveurs.\n✅ La reconnaissance vocale est effectuée localement par votre navigateur.\n✅ Seul le texte transcrit est utilisé pour la simulation.` },
         { title: "4. Finalité du traitement", content: `Les données collectées sont utilisées exclusivement pour :\n• Gérer l'accès aux simulations gratuites et payantes\n• Améliorer la qualité pédagogique de l'outil\n• Produire des statistiques anonymes d'utilisation\n• Aucune donnée n'est revendue ni partagée avec des tiers.` },
         { title: "5. Durée de conservation", content: `Les données sont conservées pour une durée maximale de 12 mois, puis supprimées automatiquement.` },
-        { title: "6. Droits des utilisateurs (RGPD)", content: `Conformément au RGPD, vous disposez des droits d'accès, rectification, effacement et opposition.\n\nPour exercer ces droits, contactez : jestors@lyceelyautey.org` },
+        { title: "6. Droits des utilisateurs (RGPD)", content: `Conformément au RGPD, vous disposez des droits d'accès, rectification, effacement et opposition.\n\nPour exercer ces droits, contactez : jestors12@gmail.com` },
         { title: "7. Cookies", content: `Cette application n'utilise pas de cookies de tracking ou publicitaires.\nVotre email est mémorisé via localStorage pour éviter de le ressaisir à chaque visite.` },
         { title: "8. Hébergement", content: `L'application est hébergée par Vercel Inc.\nLes données sont stockées dans Supabase (serveurs en Europe — Irlande).` },
       ].map((section, i) => (
@@ -920,7 +920,7 @@ function LegalPage({ onBack }) {
         </div>
       ))}
       <div style={{ background:"#EDE9FF", borderLeft:"3px solid #3D2FA0", padding:"12px 16px", borderRadius:"0 10px 10px 0", fontSize:13, color:"#2A1F7A" }}>
-        📧 Pour toute question : <strong>jestors@lyceelyautey.org</strong>
+        📧 Pour toute question : <strong>jestors12@gmail.com</strong>
       </div>
     </div>
   );
@@ -947,7 +947,9 @@ function Footer({ onLegal }) {
 export default function Home() {
   // ── Auth state ──────────────────────────────────────────────────────────
   const [userEmail, setUserEmail]   = useState(null);
-  const [authReady, setAuthReady]   = useState(false); // true once we've checked localStorage
+  const [authReady, setAuthReady]   = useState(false);
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [pendingStart, setPendingStart]     = useState(null);
 
   // ── App state ───────────────────────────────────────────────────────────
   const [screen,setScreen]         = useState("choix");
@@ -1016,14 +1018,30 @@ export default function Home() {
   }, []);
 
   // ── 2. Callback quand l'utilisateur confirme son email ──────────────────
-  function handleEmailConfirmed({ email, simulations_used, is_paid }) {
+  async function handleEmailConfirmed({ email, simulations_used, is_paid }) {
     hydrate({ simulations_used, is_paid });
     setUserEmail(email);
-    setAuthReady(true);
+    setShowEmailModal(false);
+    // Lancer la simulation en attente
+    if (pendingStart) {
+      const { q, t, s1, s2, sys, etab, vil } = pendingStart;
+      setPendingStart(null);
+      await launchSimulation(q, t, s1, s2, sys, etab, vil);
+    }
   }
 
   // ── 3. Lancer une simulation ─────────────────────────────────────────────
   async function handleStart(q, t, s1, s2, sys, etab, vil) {
+    // Si pas encore d'email → afficher le modal d'abord
+    if (!userEmail) {
+      setPendingStart({ q, t, s1, s2, sys, etab, vil });
+      setShowEmailModal(true);
+      return;
+    }
+    await launchSimulation(q, t, s1, s2, sys, etab, vil);
+  }
+
+  async function launchSimulation(q, t, s1, s2, sys, etab, vil) {
     // Vérif côté serveur (non contournable)
     const allowed = await useOne();
     if (!allowed) {
@@ -1044,7 +1062,7 @@ export default function Home() {
   const c = filiere ? COLORS[filiere] : COLORS.stmg;
 
   // ── Affichage ─────────────────────────────────────────────────────────────
-  // Pendant la vérification initiale : écran vide ou loader léger
+  // Pendant la vérification initiale : loader léger
   if (!authReady) {
     return (
       <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100vh", background:"#FDFCFF" }}>
@@ -1053,20 +1071,6 @@ export default function Home() {
           <div style={{ fontSize:13, color:"#888", fontFamily:"monospace" }}>Chargement…</div>
         </div>
       </div>
-    );
-  }
-
-  // Si email non encore renseigné : modal bloquant
-  if (!userEmail) {
-    return (
-      <>
-        <Head>
-          <title>Simulateur Jury — Grand Oral · Jenny ESTORS</title>
-          <meta name="viewport" content="width=device-width, initial-scale=1"/>
-        </Head>
-        <style>{`*{box-sizing:border-box;margin:0;padding:0}body{background:#FDFCFF;font-family:system-ui,-apple-system,sans-serif}`}</style>
-        <EmailModal onConfirmed={handleEmailConfirmed} />
-      </>
     );
   }
 
@@ -1122,5 +1126,6 @@ export default function Home() {
       {screen==="legal"   && <LegalPage onBack={backFromLegal}/>}
       {screen!=="legal"   && <Footer onLegal={goLegal}/>}
     </div>
+    {showEmailModal && <EmailModal onConfirmed={handleEmailConfirmed} />}
   </>;
 }
