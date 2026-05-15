@@ -10,11 +10,9 @@ const SPECIALITES = [
   "Sciences Politiques","Droit et Grandes Questions du Monde Contemporain",
 ];
 
-// ── CONSTANTES CRÉDITS ────────────────────────────────────────────────────
 const FREE_LIMIT = 2;
 const PAID_CREDITS = 20;
 
-// ── MODAL EMAIL ───────────────────────────────────────────────────────────
 function EmailModal({ onConfirmed }) {
   const [email, setEmail]     = useState("");
   const [error, setError]     = useState("");
@@ -99,15 +97,11 @@ function EmailModal({ onConfirmed }) {
   );
 }
 
-// ── HOOK CREDITS (serveur) ────────────────────────────────────────────────
 function useCredits(userEmail) {
-  // simCount & isPaid viennent du serveur via check-user, on les stocke localement
-  // comme cache d'affichage. La vraie limite est vérifiée dans use-simulation côté serveur.
   const [simCount,    setSimCount]    = useState(0);
   const [isPaid,      setIsPaid]      = useState(false);
   const [initialized, setInitialized] = useState(false);
 
-  // Hydratation depuis les données renvoyées par check-user
   function hydrate({ simulations_used, is_paid }) {
     setSimCount(simulations_used ?? 0);
     setIsPaid(is_paid ?? false);
@@ -117,7 +111,6 @@ function useCredits(userEmail) {
   const totalRemaining = isPaid ? PAID_CREDITS : Math.max(0, FREE_LIMIT - simCount);
   const canSimulate    = isPaid || simCount < FREE_LIMIT;
 
-  // Appel use-simulation avant de lancer : retourne true si autorisé
   async function useOne() {
     if (!userEmail) return false;
     try {
@@ -145,7 +138,6 @@ function useCredits(userEmail) {
   return { simCount, isPaid, totalRemaining, canSimulate, useOne, hydrate, initialized, markPaid };
 }
 
-// ── PAYWALL ───────────────────────────────────────────────────────────────
 function PaymentWall({ onBack, email }) {
   const [loading, setLoading] = useState(false);
 
@@ -345,7 +337,6 @@ async function callJury(system, messages) {
   return data.text;
 }
 
-// ── HOOK MICRO ────────────────────────────────────────────────────────────
 function useMic({ onPartial, onFinal }) {
   const recRef      = useRef(null);
   const finalRef    = useRef("");
@@ -396,7 +387,6 @@ function useMic({ onPartial, onFinal }) {
   return { active, ok, toggle, reset };
 }
 
-// ── CHAMP TEXTAREA + MICRO ────────────────────────────────────────────────
 function FieldWithMic({ label, hint, value, onChange, placeholder, rows=9, color }) {
   const [interim, setInterim] = useState("");
   const textBeforeMic = useRef("");
@@ -454,7 +444,6 @@ function FieldWithMic({ label, hint, value, onChange, placeholder, rows=9, color
   );
 }
 
-// ── PARSING ───────────────────────────────────────────────────────────────
 function parseJury(text) {
   const blocks=[], lines=text.split("\n");
   let cur={type:"intro",text:""};
@@ -522,7 +511,6 @@ function StepBar({step,filiere}) {
   </div>;
 }
 
-// ── LEVEL SELECTOR ────────────────────────────────────────────────────────
 function LevelSelector({ level, setLevel, color }) {
   const levels = [
     { id: "debutant",      label: "Débutant",      icon: "🌱", desc: "Questions accessibles, jury encourageant" },
@@ -553,7 +541,6 @@ function LevelSelector({ level, setLevel, color }) {
   );
 }
 
-// ── SETUP STMG ────────────────────────────────────────────────────────────
 function SetupSTMG({onStart,onBack}) {
   const [q,setQ]=useState(""), [t,setT]=useState(""), [level,setLevel]=useState("intermediaire");
   const [etablissement,setEtablissement]=useState(""), [ville,setVille]=useState("");
@@ -604,7 +591,6 @@ function SetupSTMG({onStart,onBack}) {
   </div>;
 }
 
-// ── SETUP SÉRIE GÉNÉRALE ──────────────────────────────────────────────────
 function SetupGeneral({onStart,onBack}) {
   const [q,setQ]=useState(""), [t,setT]=useState(""), [s1,setS1]=useState(""), [s2,setS2]=useState(""), [level,setLevel]=useState("intermediaire");
   const [etablissement,setEtablissement]=useState(""), [ville,setVille]=useState("");
@@ -667,7 +653,6 @@ function SetupGeneral({onStart,onBack}) {
   </div>;
 }
 
-// ── CHAT ──────────────────────────────────────────────────────────────────
 function ChatScreen({system,question,filiere,spe1,spe2,etablissement,ville,onRestart}) {
   const [messages,setMessages]=useState([]), [history,setHistory]=useState([]);
   const [input,setInput]=useState(""), [waiting,setWaiting]=useState(false);
@@ -719,6 +704,11 @@ function ChatScreen({system,question,filiere,spe1,spe2,etablissement,ville,onRes
     setTyping(false);setWaiting(false);
   }
 
+  // Extraire la note du bilan pour les boutons de partage
+  const bilanMsg = messages.find(m => m.role === "jury" && m.text.includes("[BILAN]"));
+  const noteMatch = bilanMsg?.text.match(/Note globale\s*[:\*]+\s*(\d{1,2}(?:[.,]\d)?)\s*\/\s*20/i);
+  const noteGlobale = noteMatch ? noteMatch[1] : null;
+
   return <div>
     <div style={{background:"#F4F3F8",border:"1px solid #E8E7F0",borderRadius:12,padding:"12px 16px",marginBottom:16,display:"flex",gap:10}}>
       <span style={{fontSize:18}}>⚖️</span>
@@ -769,12 +759,104 @@ function ChatScreen({system,question,filiere,spe1,spe2,etablissement,ville,onRes
       </button>
     </div>}
     {waiting&&!done&&<div style={{textAlign:"center",color:"#888",fontSize:13,padding:"12px 0",fontStyle:"italic"}}>Le jury évalue vos réponses...</div>}
-    {done&&<FeedbackForm filiere={filiere} question={question} spe1={spe1} spe2={spe2} etablissement={etablissement} ville={ville} bilanText={messages.find(m=>m.role==="jury"&&m.text.includes("[BILAN]"))?.text||""} onRestart={onRestart} color={c.primary} colorLight={c.light}/>}
+    {done&&<FeedbackForm filiere={filiere} question={question} spe1={spe1} spe2={spe2} etablissement={etablissement} ville={ville} bilanText={bilanMsg?.text||""} noteGlobale={noteGlobale} onRestart={onRestart} color={c.primary} colorLight={c.light}/>}
   </div>;
 }
 
+// ── BOUTONS DE PARTAGE SNAP & INSTAGRAM ───────────────────────────────────
+function ShareButtons({ note, filiere }) {
+  const [copied, setCopied] = useState(false);
+
+  const levelEmoji = "🎯";
+  const noteLabel  = note ? `${note}/20` : "??/20";
+  const shareText  = `J'ai eu ${noteLabel} au simulateur Grand Oral ${levelEmoji}\nJe m'entraîne sur grand-oral-jury-france.vercel.app\n2 essais gratuits 👆`;
+  const snapUrl    = `https://www.snapchat.com/share?text=${encodeURIComponent(shareText)}`;
+
+  function shareSnap() { window.open(snapUrl, "_blank"); }
+
+  function copyForInstagram() {
+    navigator.clipboard.writeText(shareText);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
+  }
+
+  return (
+    <div style={{
+      margin: "24px 0 8px",
+      padding: "18px 16px",
+      background: "#F4F3F8",
+      borderRadius: 14,
+      border: "1px solid #E8E7F0",
+    }}>
+      <div style={{
+        fontSize: 10, letterSpacing: "2px", color: "#888",
+        textTransform: "uppercase", fontFamily: "monospace",
+        marginBottom: 12, textAlign: "center",
+      }}>
+        📣 Partage ton résultat
+      </div>
+
+      <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+
+        {/* Bouton Snapchat */}
+        <button onClick={shareSnap} style={{
+          display: "flex", alignItems: "center", gap: 8,
+          padding: "10px 18px", borderRadius: 30, border: "none",
+          background: "#FFFC00", color: "#000",
+          fontWeight: 700, fontSize: 13, cursor: "pointer",
+          boxShadow: "0 3px 12px rgba(255,252,0,0.35)",
+          transition: "transform .15s",
+        }}
+          onMouseEnter={e => e.currentTarget.style.transform = "scale(1.04)"}
+          onMouseLeave={e => e.currentTarget.style.transform = "scale(1)"}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="black">
+            <path d="M12.166.006C9.39-.028 6.926 1.227 5.29 3.206c-.974 1.194-1.47 2.636-1.47 4.25v.622c0 .296-.02.588-.06.876L2.47 9.484c-.418.088-.698.49-.628.91.07.42.474.7.892.63l.876-.186c-.006.046-.01.094-.014.14-.122 1.014-.576 1.91-1.334 2.642-.228.218-.264.568-.086.83.48.71 1.514 1.054 3.142 1.054.036 0 .074 0 .11-.002.19.462.396.912.62 1.346.736 1.418 1.788 2.56 3.12 3.302.798.45 1.698.68 2.632.68.934 0 1.834-.23 2.632-.68 1.332-.742 2.384-1.884 3.12-3.302.224-.434.43-.884.62-1.346.036.002.074.002.11.002 1.628 0 2.662-.344 3.142-1.054.178-.262.142-.612-.086-.83-.758-.732-1.212-1.628-1.334-2.642a3.12 3.12 0 0 1-.014-.14l.876.186c.418.07.822-.21.892-.63.07-.42-.21-.822-.628-.91l-1.29-.53a6.35 6.35 0 0 1-.06-.876v-.622c0-3.594-2.52-6.58-5.876-7.286A7.45 7.45 0 0 0 12.166.006z"/>
+          </svg>
+          Partager sur Snap
+        </button>
+
+        {/* Bouton Instagram */}
+        <button onClick={copyForInstagram} style={{
+          display: "flex", alignItems: "center", gap: 8,
+          padding: "10px 18px", borderRadius: 30, border: "none",
+          background: copied
+            ? "linear-gradient(135deg,#22c55e,#16a34a)"
+            : "linear-gradient(135deg,#E1306C,#833AB4,#F77737)",
+          color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer",
+          boxShadow: copied
+            ? "0 3px 12px rgba(34,197,94,0.3)"
+            : "0 3px 12px rgba(225,48,108,0.3)",
+          transition: "transform .15s",
+        }}
+          onMouseEnter={e => e.currentTarget.style.transform = "scale(1.04)"}
+          onMouseLeave={e => e.currentTarget.style.transform = "scale(1)"}
+        >
+          {copied ? (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
+          ) : (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
+              <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 1 0 0 12.324 6.162 6.162 0 0 0 0-12.324zM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm6.406-11.845a1.44 1.44 0 1 0 0 2.881 1.44 1.44 0 0 0 0-2.881z"/>
+            </svg>
+          )}
+          {copied ? "Texte copié !" : "Partager sur Instagram"}
+        </button>
+      </div>
+
+      <div style={{
+        fontSize: 11, color: "#aaa", textAlign: "center",
+        marginTop: 10, lineHeight: 1.5,
+      }}>
+        {copied
+          ? "✓ Colle le texte dans ta story ou légende Instagram"
+          : "Snap : partage direct · Instagram : texte copié à coller dans ta story"}
+      </div>
+    </div>
+  );
+}
+
 // ── FORMULAIRE FEEDBACK ───────────────────────────────────────────────────
-function FeedbackForm({filiere,question,spe1,spe2,etablissement,ville,bilanText,onRestart,color,colorLight}) {
+function FeedbackForm({filiere,question,spe1,spe2,etablissement,ville,bilanText,noteGlobale,onRestart,color,colorLight}) {
   const [notePercue, setNotePercue] = useState("");
   const [utilite,    setUtilite]    = useState("");
   const [manque,     setManque]     = useState("");
@@ -804,6 +886,10 @@ function FeedbackForm({filiere,question,spe1,spe2,etablissement,ville,bilanText,
 
   return (
     <div style={{marginTop:24}}>
+
+      {/* ── BOUTONS DE PARTAGE — affichés en premier, bien visibles ── */}
+      <ShareButtons note={noteGlobale} filiere={filiere} />
+
       {!sent ? (
         <div style={{background:colorLight,borderRadius:14,padding:"20px",marginBottom:20,border:`1px solid ${color}22`}}>
           <div style={{fontWeight:600,fontSize:14,color:"#1C1A2E",marginBottom:4}}>💬 30 secondes de feedback</div>
@@ -866,7 +952,6 @@ function FeedbackForm({filiere,question,spe1,spe2,etablissement,ville,bilanText,
   );
 }
 
-// ── CHOIX FILIÈRE ─────────────────────────────────────────────────────────
 function ChoixFiliere({onChoix}) {
   return <div>
     <div style={{textAlign:"center",marginBottom:32}}>
@@ -895,7 +980,6 @@ function ChoixFiliere({onChoix}) {
   </div>;
 }
 
-// ── PAGE MENTIONS LÉGALES ─────────────────────────────────────────────────
 function LegalPage({ onBack }) {
   return (
     <div style={{ maxWidth:680, margin:"0 auto", padding:"0 0 60px" }}>
@@ -926,7 +1010,6 @@ function LegalPage({ onBack }) {
   );
 }
 
-// ── FOOTER ────────────────────────────────────────────────────────────────
 function Footer({ onLegal }) {
   return (
     <div style={{ borderTop:"1px solid #E8E7F0", marginTop:40, padding:"16px 0", textAlign:"center" }}>
@@ -943,15 +1026,12 @@ function Footer({ onLegal }) {
   );
 }
 
-// ── APP ───────────────────────────────────────────────────────────────────
 export default function Home() {
-  // ── Auth state ──────────────────────────────────────────────────────────
   const [userEmail, setUserEmail]   = useState(null);
   const [authReady, setAuthReady]   = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [pendingStart, setPendingStart]     = useState(null);
 
-  // ── App state ───────────────────────────────────────────────────────────
   const [screen,setScreen]         = useState("choix");
   const [filiere,setFiliere]       = useState("");
   const [prevScreen,setPrevScreen] = useState("choix");
@@ -967,18 +1047,14 @@ export default function Home() {
 
   const { simCount, isPaid, totalRemaining, canSimulate, useOne, hydrate, markPaid } = useCredits(userEmail);
 
-  // ── 1. Initialisation auth au chargement ────────────────────────────────
   useEffect(() => {
     if (typeof window === "undefined") return;
-
-    // Vérifier retour paiement Stripe AVANT d'afficher le modal
     const params    = new URLSearchParams(window.location.search);
     const payment   = params.get("payment");
     const sessionId = params.get("session_id");
     const savedEmail = localStorage.getItem("go_email");
 
     async function init() {
-      // Cas : retour paiement Stripe
       if (payment === "success" && sessionId && savedEmail) {
         try {
           const res  = await fetch(`/api/verify-payment?session_id=${sessionId}&email=${encodeURIComponent(savedEmail)}`);
@@ -989,8 +1065,6 @@ export default function Home() {
           }
         } catch {}
       }
-
-      // Cas : email déjà connu → vérifier statut côté serveur
       if (savedEmail) {
         try {
           const res  = await fetch("/api/check-user", {
@@ -1003,26 +1077,21 @@ export default function Home() {
             hydrate(data);
             setUserEmail(savedEmail);
           } else {
-            // Erreur serveur → on garde l'email mais on affiche quand même
             setUserEmail(savedEmail);
           }
         } catch {
           setUserEmail(savedEmail);
         }
       }
-
       setAuthReady(true);
     }
-
     init();
   }, []);
 
-  // ── 2. Callback quand l'utilisateur confirme son email ──────────────────
   async function handleEmailConfirmed({ email, simulations_used, is_paid }) {
     hydrate({ simulations_used, is_paid });
     setUserEmail(email);
     setShowEmailModal(false);
-    // Lancer la simulation en attente
     if (pendingStart) {
       const { q, t, s1, s2, sys, etab, vil } = pendingStart;
       setPendingStart(null);
@@ -1030,9 +1099,7 @@ export default function Home() {
     }
   }
 
-  // ── 3. Lancer une simulation ─────────────────────────────────────────────
   async function handleStart(q, t, s1, s2, sys, etab, vil) {
-    // Si pas encore d'email → afficher le modal d'abord
     if (!userEmail) {
       setPendingStart({ q, t, s1, s2, sys, etab, vil });
       setShowEmailModal(true);
@@ -1042,7 +1109,6 @@ export default function Home() {
   }
 
   async function launchSimulation(q, t, s1, s2, sys, etab, vil) {
-    // Vérif côté serveur (non contournable)
     const allowed = await useOne();
     if (!allowed) {
       setScreen("payment");
@@ -1061,8 +1127,6 @@ export default function Home() {
 
   const c = filiere ? COLORS[filiere] : COLORS.stmg;
 
-  // ── Affichage ─────────────────────────────────────────────────────────────
-  // Pendant la vérification initiale : loader léger
   if (!authReady) {
     return (
       <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100vh", background:"#FDFCFF" }}>
