@@ -13,12 +13,23 @@ const SPECIALITES = [
 const FREE_LIMIT = 2;
 const PAID_CREDITS = 20;
 
-function EmailModal({ onConfirmed }) {
+// ── MODAL EMAIL + CODE 6 CHIFFRES ─────────────────────────────────────────
+function EmailWithCodeModal({ onConfirmed }) {
+  const [step, setStep]       = useState("email");
   const [email, setEmail]     = useState("");
+  const [code, setCode]       = useState(["", "", "", "", "", ""]);
   const [error, setError]     = useState("");
   const [loading, setLoading] = useState(false);
+  const [resendTimer, setResendTimer] = useState(0);
+  const inputRefs = useRef([]);
 
-  async function submit() {
+  useEffect(() => {
+    if (resendTimer <= 0) return;
+    const t = setTimeout(() => setResendTimer(r => r - 1), 1000);
+    return () => clearTimeout(t);
+  }, [resendTimer]);
+
+  async function submitEmail() {
     const val = email.trim().toLowerCase();
     if (!val || !val.includes("@") || !val.includes(".")) {
       setError("Adresse email invalide.");
@@ -27,76 +38,165 @@ function EmailModal({ onConfirmed }) {
     setError("");
     setLoading(true);
     try {
-      const res  = await fetch("/api/check-user", {
+      const res  = await fetch("/api/send-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: val }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Erreur serveur");
-      localStorage.setItem("go_email", val);
-      onConfirmed({ email: val, ...data });
+      setStep("code");
+      setResendTimer(60);
     } catch (e) {
-      setError("Erreur serveur — réessayez.");
+      setError(e.message || "Erreur lors de l'envoi. Réessayez.");
     }
     setLoading(false);
   }
 
-  return (
-    <div style={{
-      position:"fixed", inset:0, background:"rgba(0,0,0,.72)",
-      display:"flex", alignItems:"center", justifyContent:"center", zIndex:9999,
-    }}>
-      <div style={{
-        background:"#fff", borderRadius:20, padding:"36px 28px",
-        maxWidth:420, width:"90%", textAlign:"center",
-        boxShadow:"0 24px 64px rgba(0,0,0,.3)",
-      }}>
-        <div style={{ fontSize:38, marginBottom:12 }}>🎓</div>
-        <h2 style={{ fontSize:20, fontWeight:700, color:"#1C1A2E", marginBottom:8 }}>
-          Bienvenue sur le simulateur<br/>Grand Oral
+  async function submitCode() {
+    const fullCode = code.join("");
+    if (fullCode.length !== 6) { setError("Entrez les 6 chiffres."); return; }
+    setError("");
+    setLoading(true);
+    try {
+      const res  = await fetch("/api/verify-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim().toLowerCase(), code: fullCode }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Code incorrect.");
+      localStorage.setItem("go_email", email.trim().toLowerCase());
+      onConfirmed({ email: email.trim().toLowerCase(), ...data });
+    } catch (e) {
+      setError(e.message || "Code invalide ou expiré.");
+      setCode(["", "", "", "", "", ""]);
+      inputRefs.current[0]?.focus();
+    }
+    setLoading(false);
+  }
+
+  function handleCodeInput(index, value) {
+    const digit = value.replace(/\D/g, "").slice(-1);
+    const newCode = [...code];
+    newCode[index] = digit;
+    setCode(newCode);
+    if (digit && index < 5) inputRefs.current[index + 1]?.focus();
+  }
+
+  function handleCodeKeyDown(index, e) {
+    if (e.key === "Backspace" && !code[index] && index > 0) inputRefs.current[index - 1]?.focus();
+    if (e.key === "Enter" && code.join("").length === 6) submitCode();
+  }
+
+  function handleCodePaste(e) {
+    const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
+    if (pasted.length === 6) { setCode(pasted.split("")); inputRefs.current[5]?.focus(); }
+    e.preventDefault();
+  }
+
+  async function resendCode() {
+    if (resendTimer > 0) return;
+    setError(""); setLoading(true);
+    try {
+      await fetch("/api/send-code", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim().toLowerCase() }),
+      });
+      setResendTimer(60); setCode(["", "", "", "", "", ""]);
+      inputRefs.current[0]?.focus();
+    } catch {}
+    setLoading(false);
+  }
+
+  const overlay = {
+    position: "fixed", inset: 0, background: "rgba(0,0,0,.75)",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    zIndex: 9999, backdropFilter: "blur(4px)",
+  };
+  const card = {
+    background: "#fff", borderRadius: 20, padding: "36px 28px",
+    maxWidth: 420, width: "90%", textAlign: "center",
+    boxShadow: "0 24px 64px rgba(0,0,0,.3)",
+  };
+  const btnStyle = (disabled) => ({
+    width: "100%", padding: "13px",
+    background: disabled ? "#9CA3AF" : "#6558D3",
+    color: "#fff", border: "none", borderRadius: 10, fontSize: 15,
+    fontWeight: 600, cursor: disabled ? "not-allowed" : "pointer",
+    marginTop: 4, transition: "background .2s",
+  });
+
+  if (step === "email") return (
+    <div style={overlay}>
+      <div style={card}>
+        <div style={{ fontSize: 38, marginBottom: 12 }}>🎓</div>
+        <h2 style={{ fontSize: 20, fontWeight: 700, color: "#1C1A2E", marginBottom: 8 }}>
+          Presque prêt·e !
         </h2>
-        <p style={{ fontSize:13, color:"#666", marginBottom:24, lineHeight:1.7 }}>
-          Entrez votre email pour accéder à vos <strong>2 simulations gratuites</strong>
-          <br/>et retrouver votre accès sur tous vos appareils.
+        <p style={{ fontSize: 13, color: "#666", marginBottom: 24, lineHeight: 1.7 }}>
+          Le jury va prendre la parole dans quelques secondes.<br/>
+          Entrez votre email pour accéder à vos <strong>2 simulations gratuites</strong> et retrouver votre accès sur tous vos appareils.
         </p>
-        <input
-          type="email"
-          value={email}
-          onChange={e => setEmail(e.target.value)}
-          onKeyDown={e => e.key === "Enter" && submit()}
-          placeholder="prenom.nom@lycee.fr"
-          autoComplete="email"
-          style={{
-            width:"100%", padding:"11px 14px", fontSize:14,
-            border:`2px solid ${error ? "#DC2626" : "#E8E7F0"}`,
-            borderRadius:10, outline:"none", boxSizing:"border-box",
-            marginBottom:8, fontFamily:"inherit",
-            transition:"border-color .2s",
-          }}
+        <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && submitEmail()}
+          placeholder="prenom.nom@lycee.fr" autoFocus autoComplete="email"
+          style={{ width: "100%", padding: "11px 14px", fontSize: 14, border: `2px solid ${error ? "#DC2626" : "#E8E7F0"}`, borderRadius: 10, outline: "none", boxSizing: "border-box", marginBottom: 8, fontFamily: "inherit" }}
         />
-        {error && <p style={{ color:"#DC2626", fontSize:12, marginBottom:8 }}>{error}</p>}
-        <button
-          onClick={submit}
-          disabled={loading}
-          style={{
-            width:"100%", padding:"13px", background: loading ? "#9CA3AF" : "#6558D3",
-            color:"#fff", border:"none", borderRadius:10, fontSize:15,
-            fontWeight:600, cursor: loading ? "not-allowed" : "pointer",
-            marginTop:4, transition:"background .2s",
-          }}
-        >
-          {loading ? "Vérification…" : "Commencer →"}
+        {error && <p style={{ color: "#DC2626", fontSize: 12, marginBottom: 8 }}>{error}</p>}
+        <button onClick={submitEmail} disabled={loading} style={btnStyle(loading)}>
+          {loading ? "Envoi du code…" : "Recevoir mon code →"}
         </button>
-        <p style={{ fontSize:11, color:"#bbb", marginTop:14, lineHeight:1.6 }}>
-          Pas de spam. Email utilisé uniquement pour gérer vos simulations.<br/>
-          Conforme RGPD — voir mentions légales.
+        <p style={{ fontSize: 11, color: "#bbb", marginTop: 14, lineHeight: 1.6 }}>
+          Un code à 6 chiffres vous sera envoyé par email.<br/>Conforme RGPD · Pas de spam.
         </p>
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={overlay}>
+      <div style={card}>
+        <div style={{ fontSize: 38, marginBottom: 12 }}>📬</div>
+        <h2 style={{ fontSize: 20, fontWeight: 700, color: "#1C1A2E", marginBottom: 8 }}>Code envoyé !</h2>
+        <p style={{ fontSize: 13, color: "#666", marginBottom: 8, lineHeight: 1.6 }}>
+          Consultez votre boîte mail :<br/>
+          <strong style={{ color: "#1C1A2E" }}>{email}</strong>
+        </p>
+        <p style={{ fontSize: 12, color: "#888", marginBottom: 24 }}>Entrez le code à 6 chiffres reçu par email.</p>
+        <div style={{ display: "flex", gap: 8, justifyContent: "center", marginBottom: 16 }} onPaste={handleCodePaste}>
+          {code.map((digit, i) => (
+            <input key={i} ref={el => inputRefs.current[i] = el}
+              type="text" inputMode="numeric" maxLength={1} value={digit}
+              onChange={e => handleCodeInput(i, e.target.value)}
+              onKeyDown={e => handleCodeKeyDown(i, e)}
+              autoFocus={i === 0}
+              style={{ width: 44, height: 52, textAlign: "center", fontSize: 22, fontWeight: 700, border: `2px solid ${error ? "#DC2626" : digit ? "#6558D3" : "#E8E7F0"}`, borderRadius: 10, outline: "none", fontFamily: "monospace", color: "#1C1A2E", background: digit ? "#EDE9FF" : "#FDFCFF" }}
+            />
+          ))}
+        </div>
+        {error && <p style={{ color: "#DC2626", fontSize: 12, marginBottom: 12 }}>{error}</p>}
+        <button onClick={submitCode} disabled={loading || code.join("").length !== 6} style={btnStyle(loading || code.join("").length !== 6)}>
+          {loading ? "Vérification…" : "Accéder au simulateur →"}
+        </button>
+        <div style={{ marginTop: 16, fontSize: 12, color: "#888" }}>
+          Code non reçu ?{" "}
+          {resendTimer > 0 ? <span style={{ color: "#aaa" }}>Renvoyer dans {resendTimer}s</span> : (
+            <button onClick={resendCode} disabled={loading} style={{ background: "none", border: "none", color: "#6558D3", cursor: "pointer", fontSize: 12, fontWeight: 600, textDecoration: "underline", padding: 0 }}>
+              Renvoyer le code
+            </button>
+          )}
+        </div>
+        <button onClick={() => { setStep("email"); setCode(["","","","","",""]); setError(""); }}
+          style={{ background: "none", border: "none", color: "#aaa", fontSize: 12, cursor: "pointer", marginTop: 8 }}>
+          ← Modifier l'adresse email
+        </button>
       </div>
     </div>
   );
 }
 
+// ── HOOK CREDITS ──────────────────────────────────────────────────────────
 function useCredits(userEmail) {
   const [simCount,    setSimCount]    = useState(0);
   const [isPaid,      setIsPaid]      = useState(false);
@@ -108,36 +208,28 @@ function useCredits(userEmail) {
     setInitialized(true);
   }
 
-  const totalRemaining = isPaid ? PAID_CREDITS : Math.max(0, FREE_LIMIT - simCount);
-  const canSimulate    = isPaid || simCount < FREE_LIMIT;
+  const canSimulate = isPaid || simCount < FREE_LIMIT;
 
   async function useOne() {
     if (!userEmail) return false;
     try {
       const res  = await fetch("/api/use-simulation", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: userEmail }),
       });
       const data = await res.json();
       if (res.status === 403 || data.limit_reached) return false;
-      if (res.ok) {
-        setSimCount(data.simulations_used);
-        setIsPaid(data.is_paid);
-        return true;
-      }
+      if (res.ok) { setSimCount(data.simulations_used); setIsPaid(data.is_paid); return true; }
       return false;
     } catch { return false; }
   }
 
-  function markPaid() {
-    setIsPaid(true);
-    setSimCount(0);
-  }
+  function markPaid() { setIsPaid(true); setSimCount(0); }
 
-  return { simCount, isPaid, totalRemaining, canSimulate, useOne, hydrate, initialized, markPaid };
+  return { simCount, isPaid, canSimulate, useOne, hydrate, initialized, markPaid };
 }
 
+// ── PAYWALL ───────────────────────────────────────────────────────────────
 function PaymentWall({ onBack, email }) {
   const [loading, setLoading] = useState(false);
 
@@ -145,15 +237,12 @@ function PaymentWall({ onBack, email }) {
     setLoading(true);
     try {
       const res  = await fetch("/api/create-payment", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
       });
       const data = await res.json();
       if (data.url) window.location.href = data.url;
-    } catch {
-      alert("Erreur de paiement — réessayez.");
-    }
+    } catch { alert("Erreur de paiement — réessayez."); }
     setLoading(false);
   }
 
@@ -161,9 +250,7 @@ function PaymentWall({ onBack, email }) {
     <div style={{ maxWidth:480, margin:"40px auto", padding:"0 20px" }}>
       <div style={{ background:"#1C1A2E", borderRadius:20, padding:"32px 28px", color:"#fff", textAlign:"center" }}>
         <div style={{ fontSize:40, marginBottom:12 }}>⚖️</div>
-        <h2 style={{ fontSize:22, fontWeight:700, marginBottom:8 }}>
-          Tu as utilisé tes 2 simulations gratuites
-        </h2>
+        <h2 style={{ fontSize:22, fontWeight:700, marginBottom:8 }}>Tu as utilisé tes 2 simulations gratuites</h2>
         <p style={{ fontSize:14, color:"#9A8EF5", marginBottom:24, lineHeight:1.6 }}>
           Continue à t'entraîner sans limite jusqu'au 11 juillet pour être prêt le jour J.
         </p>
@@ -182,10 +269,7 @@ function PaymentWall({ onBack, email }) {
           style={{ width:"100%", padding:"14px", background:"#6558D3", border:"none", borderRadius:12, color:"#fff", fontSize:16, fontWeight:600, cursor:loading?"not-allowed":"pointer", marginBottom:12 }}>
           {loading ? "Redirection..." : "Accès illimité pour 4,99 €"}
         </button>
-        <button onClick={onBack}
-          style={{ background:"none", border:"none", color:"#555", fontSize:13, cursor:"pointer" }}>
-          ← Retour
-        </button>
+        <button onClick={onBack} style={{ background:"none", border:"none", color:"#555", fontSize:13, cursor:"pointer" }}>← Retour</button>
       </div>
       <div style={{ textAlign:"center", marginTop:16, fontSize:11, color:"#aaa" }}>
         🔒 Paiement sécurisé par Stripe · Conçu par Jenny ESTORS
@@ -349,9 +433,7 @@ function useMic({ onPartial, onFinal }) {
     if (!SR) return;
     setOk(true);
     const r = new SR();
-    r.lang = "fr-FR";
-    r.continuous = true;
-    r.interimResults = true;
+    r.lang = "fr-FR"; r.continuous = true; r.interimResults = true;
     r.onresult = e => {
       let interim = "";
       for (let i = e.resultIndex; i < e.results.length; i++) {
@@ -379,10 +461,7 @@ function useMic({ onPartial, onFinal }) {
     else { finalRef.current = ""; setActive(true); recRef.current.start(); }
   }, [active]);
 
-  const reset = useCallback(() => {
-    previousRef.current = "";
-    finalRef.current = "";
-  }, []);
+  const reset = useCallback(() => { previousRef.current = ""; finalRef.current = ""; }, []);
 
   return { active, ok, toggle, reset };
 }
@@ -415,14 +494,7 @@ function FieldWithMic({ label, hint, value, onChange, placeholder, rows=9, color
       />
       {ok && (
         <div style={{ marginTop:8 }}>
-          <button onClick={handleToggle} style={{
-            display:"flex", alignItems:"center", gap:8,
-            padding:"8px 16px", borderRadius:99, border:"none",
-            background: active ? "#DC2626" : color,
-            color:"#fff", fontSize:13, fontWeight:500, cursor:"pointer",
-            boxShadow: active ? "0 0 0 4px rgba(220,38,38,.2)" : "none",
-            transition:"all .2s",
-          }}>
+          <button onClick={handleToggle} style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 16px", borderRadius:99, border:"none", background: active ? "#DC2626" : color, color:"#fff", fontSize:13, fontWeight:500, cursor:"pointer", boxShadow: active ? "0 0 0 4px rgba(220,38,38,.2)" : "none", transition:"all .2s" }}>
             <span style={{ fontSize:16 }}>{active ? "⏹" : "🎙️"}</span>
             <span>{active ? "Arrêter la dictée" : "Dicter ma présentation"}</span>
             {active && <span style={{ width:8, height:8, borderRadius:"50%", background:"#fff", animation:"pulse 1s ease infinite" }}/>}
@@ -519,18 +591,11 @@ function LevelSelector({ level, setLevel, color }) {
   ];
   return (
     <div style={{ marginBottom: 20 }}>
-      <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: ".1em", textTransform: "uppercase", color: "#888", fontFamily: "monospace", marginBottom: 8 }}>
-        Niveau de difficulté
-      </div>
+      <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: ".1em", textTransform: "uppercase", color: "#888", fontFamily: "monospace", marginBottom: 8 }}>Niveau de difficulté</div>
       <div style={{ display: "flex", gap: 8 }}>
         {levels.map(l => (
           <button key={l.id} onClick={() => setLevel(l.id)}
-            style={{
-              flex: 1, padding: "10px 8px", borderRadius: 10, cursor: "pointer",
-              border: `2px solid ${level === l.id ? color : "#E8E7F0"}`,
-              background: level === l.id ? (color === "#3D2FA0" ? "#EDE9FF" : "#E1F5EE") : "#fff",
-              transition: "all .2s", textAlign: "center",
-            }}>
+            style={{ flex: 1, padding: "10px 8px", borderRadius: 10, cursor: "pointer", border: `2px solid ${level === l.id ? color : "#E8E7F0"}`, background: level === l.id ? (color === "#3D2FA0" ? "#EDE9FF" : "#E1F5EE") : "#fff", transition: "all .2s", textAlign: "center" }}>
             <div style={{ fontSize: 18, marginBottom: 4 }}>{l.icon}</div>
             <div style={{ fontSize: 12, fontWeight: 600, color: level === l.id ? color : "#555" }}>{l.label}</div>
             <div style={{ fontSize: 10, color: "#888", lineHeight: 1.3, marginTop: 2 }}>{l.desc}</div>
@@ -569,15 +634,13 @@ function SetupSTMG({onStart,onBack}) {
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
         <div>
           <div style={{fontSize:11,color:"#666",marginBottom:5}}>Nom du lycée</div>
-          <input type="text" value={etablissement} onChange={e=>setEtablissement(e.target.value)}
-            placeholder="Ex : Lycée Henri IV"
+          <input type="text" value={etablissement} onChange={e=>setEtablissement(e.target.value)} placeholder="Ex : Lycée Henri IV"
             style={{width:"100%",padding:"9px 12px",border:`1.5px solid ${etablissement?"#9CA3AF":"#E8E7F0"}`,borderRadius:8,fontSize:13,fontFamily:"inherit",color:"#1C1A2E",outline:"none",background:"#fff"}}
           />
         </div>
         <div>
           <div style={{fontSize:11,color:"#666",marginBottom:5}}>Ville</div>
-          <input type="text" value={ville} onChange={e=>setVille(e.target.value)}
-            placeholder="Ex : Paris"
+          <input type="text" value={ville} onChange={e=>setVille(e.target.value)} placeholder="Ex : Paris"
             style={{width:"100%",padding:"9px 12px",border:`1.5px solid ${ville?"#9CA3AF":"#E8E7F0"}`,borderRadius:8,fontSize:13,fontFamily:"inherit",color:"#1C1A2E",outline:"none",background:"#fff"}}
           />
         </div>
@@ -619,15 +682,13 @@ function SetupGeneral({onStart,onBack}) {
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
         <div>
           <div style={{fontSize:11,color:"#666",marginBottom:5}}>Nom du lycée</div>
-          <input type="text" value={etablissement} onChange={e=>setEtablissement(e.target.value)}
-            placeholder="Ex : Lycée Henri IV"
+          <input type="text" value={etablissement} onChange={e=>setEtablissement(e.target.value)} placeholder="Ex : Lycée Henri IV"
             style={{width:"100%",padding:"9px 12px",border:`1.5px solid ${etablissement?"#9CA3AF":"#E8E7F0"}`,borderRadius:8,fontSize:13,fontFamily:"inherit",color:"#1C1A2E",outline:"none",background:"#fff"}}
           />
         </div>
         <div>
           <div style={{fontSize:11,color:"#666",marginBottom:5}}>Ville</div>
-          <input type="text" value={ville} onChange={e=>setVille(e.target.value)}
-            placeholder="Ex : Paris"
+          <input type="text" value={ville} onChange={e=>setVille(e.target.value)} placeholder="Ex : Paris"
             style={{width:"100%",padding:"9px 12px",border:`1.5px solid ${ville?"#9CA3AF":"#E8E7F0"}`,borderRadius:8,fontSize:13,fontFamily:"inherit",color:"#1C1A2E",outline:"none",background:"#fff"}}
           />
         </div>
@@ -704,11 +765,6 @@ function ChatScreen({system,question,filiere,spe1,spe2,etablissement,ville,onRes
     setTyping(false);setWaiting(false);
   }
 
-  // Extraire la note du bilan pour les boutons de partage
-  const bilanMsg = messages.find(m => m.role === "jury" && m.text.includes("[BILAN]"));
-  const noteMatch = bilanMsg?.text.match(/Note globale\s*[:\*]+\s*(\d{1,2}(?:[.,]\d)?)\s*\/\s*20/i);
-  const noteGlobale = noteMatch ? noteMatch[1] : null;
-
   return <div>
     <div style={{background:"#F4F3F8",border:"1px solid #E8E7F0",borderRadius:12,padding:"12px 16px",marginBottom:16,display:"flex",gap:10}}>
       <span style={{fontSize:18}}>⚖️</span>
@@ -759,104 +815,11 @@ function ChatScreen({system,question,filiere,spe1,spe2,etablissement,ville,onRes
       </button>
     </div>}
     {waiting&&!done&&<div style={{textAlign:"center",color:"#888",fontSize:13,padding:"12px 0",fontStyle:"italic"}}>Le jury évalue vos réponses...</div>}
-    {done&&<FeedbackForm filiere={filiere} question={question} spe1={spe1} spe2={spe2} etablissement={etablissement} ville={ville} bilanText={bilanMsg?.text||""} noteGlobale={noteGlobale} onRestart={onRestart} color={c.primary} colorLight={c.light}/>}
+    {done&&<FeedbackForm filiere={filiere} question={question} spe1={spe1} spe2={spe2} etablissement={etablissement} ville={ville} bilanText={messages.find(m=>m.role==="jury"&&m.text.includes("[BILAN]"))?.text||""} onRestart={onRestart} color={c.primary} colorLight={c.light}/>}
   </div>;
 }
 
-// ── BOUTONS DE PARTAGE SNAP & INSTAGRAM ───────────────────────────────────
-function ShareButtons({ note, filiere }) {
-  const [copied, setCopied] = useState(false);
-
-  const levelEmoji = "🎯";
-  const noteLabel  = note ? `${note}/20` : "??/20";
-  const shareText  = `J'ai eu ${noteLabel} au simulateur Grand Oral ${levelEmoji}\nJe m'entraîne sur grand-oral-jury-france.vercel.app\n2 essais gratuits 👆`;
-  const snapUrl    = `https://www.snapchat.com/share?text=${encodeURIComponent(shareText)}`;
-
-  function shareSnap() { window.open(snapUrl, "_blank"); }
-
-  function copyForInstagram() {
-    navigator.clipboard.writeText(shareText);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2500);
-  }
-
-  return (
-    <div style={{
-      margin: "24px 0 8px",
-      padding: "18px 16px",
-      background: "#F4F3F8",
-      borderRadius: 14,
-      border: "1px solid #E8E7F0",
-    }}>
-      <div style={{
-        fontSize: 10, letterSpacing: "2px", color: "#888",
-        textTransform: "uppercase", fontFamily: "monospace",
-        marginBottom: 12, textAlign: "center",
-      }}>
-        📣 Partage ton résultat
-      </div>
-
-      <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
-
-        {/* Bouton Snapchat */}
-        <button onClick={shareSnap} style={{
-          display: "flex", alignItems: "center", gap: 8,
-          padding: "10px 18px", borderRadius: 30, border: "none",
-          background: "#FFFC00", color: "#000",
-          fontWeight: 700, fontSize: 13, cursor: "pointer",
-          boxShadow: "0 3px 12px rgba(255,252,0,0.35)",
-          transition: "transform .15s",
-        }}
-          onMouseEnter={e => e.currentTarget.style.transform = "scale(1.04)"}
-          onMouseLeave={e => e.currentTarget.style.transform = "scale(1)"}
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="black">
-            <path d="M12.166.006C9.39-.028 6.926 1.227 5.29 3.206c-.974 1.194-1.47 2.636-1.47 4.25v.622c0 .296-.02.588-.06.876L2.47 9.484c-.418.088-.698.49-.628.91.07.42.474.7.892.63l.876-.186c-.006.046-.01.094-.014.14-.122 1.014-.576 1.91-1.334 2.642-.228.218-.264.568-.086.83.48.71 1.514 1.054 3.142 1.054.036 0 .074 0 .11-.002.19.462.396.912.62 1.346.736 1.418 1.788 2.56 3.12 3.302.798.45 1.698.68 2.632.68.934 0 1.834-.23 2.632-.68 1.332-.742 2.384-1.884 3.12-3.302.224-.434.43-.884.62-1.346.036.002.074.002.11.002 1.628 0 2.662-.344 3.142-1.054.178-.262.142-.612-.086-.83-.758-.732-1.212-1.628-1.334-2.642a3.12 3.12 0 0 1-.014-.14l.876.186c.418.07.822-.21.892-.63.07-.42-.21-.822-.628-.91l-1.29-.53a6.35 6.35 0 0 1-.06-.876v-.622c0-3.594-2.52-6.58-5.876-7.286A7.45 7.45 0 0 0 12.166.006z"/>
-          </svg>
-          Partager sur Snap
-        </button>
-
-        {/* Bouton Instagram */}
-        <button onClick={copyForInstagram} style={{
-          display: "flex", alignItems: "center", gap: 8,
-          padding: "10px 18px", borderRadius: 30, border: "none",
-          background: copied
-            ? "linear-gradient(135deg,#22c55e,#16a34a)"
-            : "linear-gradient(135deg,#E1306C,#833AB4,#F77737)",
-          color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer",
-          boxShadow: copied
-            ? "0 3px 12px rgba(34,197,94,0.3)"
-            : "0 3px 12px rgba(225,48,108,0.3)",
-          transition: "transform .15s",
-        }}
-          onMouseEnter={e => e.currentTarget.style.transform = "scale(1.04)"}
-          onMouseLeave={e => e.currentTarget.style.transform = "scale(1)"}
-        >
-          {copied ? (
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
-          ) : (
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
-              <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 1 0 0 12.324 6.162 6.162 0 0 0 0-12.324zM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm6.406-11.845a1.44 1.44 0 1 0 0 2.881 1.44 1.44 0 0 0 0-2.881z"/>
-            </svg>
-          )}
-          {copied ? "Texte copié !" : "Partager sur Instagram"}
-        </button>
-      </div>
-
-      <div style={{
-        fontSize: 11, color: "#aaa", textAlign: "center",
-        marginTop: 10, lineHeight: 1.5,
-      }}>
-        {copied
-          ? "✓ Colle le texte dans ta story ou légende Instagram"
-          : "Snap : partage direct · Instagram : texte copié à coller dans ta story"}
-      </div>
-    </div>
-  );
-}
-
-// ── FORMULAIRE FEEDBACK ───────────────────────────────────────────────────
-function FeedbackForm({filiere,question,spe1,spe2,etablissement,ville,bilanText,noteGlobale,onRestart,color,colorLight}) {
+function FeedbackForm({filiere,question,spe1,spe2,etablissement,ville,bilanText,onRestart,color,colorLight}) {
   const [notePercue, setNotePercue] = useState("");
   const [utilite,    setUtilite]    = useState("");
   const [manque,     setManque]     = useState("");
@@ -886,10 +849,6 @@ function FeedbackForm({filiere,question,spe1,spe2,etablissement,ville,bilanText,
 
   return (
     <div style={{marginTop:24}}>
-
-      {/* ── BOUTONS DE PARTAGE — affichés en premier, bien visibles ── */}
-      <ShareButtons note={noteGlobale} filiere={filiere} />
-
       {!sent ? (
         <div style={{background:colorLight,borderRadius:14,padding:"20px",marginBottom:20,border:`1px solid ${color}22`}}>
           <div style={{fontWeight:600,fontSize:14,color:"#1C1A2E",marginBottom:4}}>💬 30 secondes de feedback</div>
@@ -983,9 +942,7 @@ function ChoixFiliere({onChoix}) {
 function LegalPage({ onBack }) {
   return (
     <div style={{ maxWidth:680, margin:"0 auto", padding:"0 0 60px" }}>
-      <button onClick={onBack} style={{ background:"none", border:"none", cursor:"pointer", color:"#888", fontSize:13, marginBottom:24, display:"flex", alignItems:"center", gap:6 }}>
-        ← Retour
-      </button>
+      <button onClick={onBack} style={{ background:"none", border:"none", cursor:"pointer", color:"#888", fontSize:13, marginBottom:24, display:"flex", alignItems:"center", gap:6 }}>← Retour</button>
       <h1 style={{ fontSize:22, fontWeight:700, color:"#1C1A2E", marginBottom:8 }}>Mentions légales & Confidentialité</h1>
       <p style={{ fontSize:12, color:"#888", marginBottom:32, fontFamily:"monospace" }}>Dernière mise à jour : mai 2026</p>
       {[
@@ -1026,6 +983,7 @@ function Footer({ onLegal }) {
   );
 }
 
+// ── APP ───────────────────────────────────────────────────────────────────
 export default function Home() {
   const [userEmail, setUserEmail]   = useState(null);
   const [authReady, setAuthReady]   = useState(false);
@@ -1045,7 +1003,7 @@ export default function Home() {
   const [ville,setVille]   = useState("");
   const [system,setSys]    = useState("");
 
-  const { simCount, isPaid, totalRemaining, canSimulate, useOne, hydrate, markPaid } = useCredits(userEmail);
+  const { simCount, isPaid, canSimulate, useOne, hydrate, markPaid } = useCredits(userEmail);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1059,29 +1017,18 @@ export default function Home() {
         try {
           const res  = await fetch(`/api/verify-payment?session_id=${sessionId}&email=${encodeURIComponent(savedEmail)}`);
           const data = await res.json();
-          if (data.paid) {
-            markPaid();
-            window.history.replaceState({}, "", "/");
-          }
+          if (data.paid) { markPaid(); window.history.replaceState({}, "", "/"); }
         } catch {}
       }
       if (savedEmail) {
         try {
           const res  = await fetch("/api/check-user", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
+            method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ email: savedEmail }),
           });
-          if (res.ok) {
-            const data = await res.json();
-            hydrate(data);
-            setUserEmail(savedEmail);
-          } else {
-            setUserEmail(savedEmail);
-          }
-        } catch {
-          setUserEmail(savedEmail);
-        }
+          if (res.ok) { const data = await res.json(); hydrate(data); setUserEmail(savedEmail); }
+          else { setUserEmail(savedEmail); }
+        } catch { setUserEmail(savedEmail); }
       }
       setAuthReady(true);
     }
@@ -1110,14 +1057,10 @@ export default function Home() {
 
   async function launchSimulation(q, t, s1, s2, sys, etab, vil) {
     const allowed = await useOne();
-    if (!allowed) {
-      setScreen("payment");
-      return;
-    }
+    if (!allowed) { setScreen("payment"); return; }
     setQ(q); setT(t); setS1(s1||""); setS2(s2||"");
     setEtablissement(etab||""); setVille(vil||"");
-    setSys(sys);
-    setScreen("chat");
+    setSys(sys); setScreen("chat");
   }
 
   function restart() {
@@ -1190,6 +1133,6 @@ export default function Home() {
       {screen==="legal"   && <LegalPage onBack={backFromLegal}/>}
       {screen!=="legal"   && <Footer onLegal={goLegal}/>}
     </div>
-    {showEmailModal && <EmailModal onConfirmed={handleEmailConfirmed} />}
+    {showEmailModal && <EmailWithCodeModal onConfirmed={handleEmailConfirmed} />}
   </>;
 }
