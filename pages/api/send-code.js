@@ -16,7 +16,6 @@ export default async function handler(req, res) {
   const code = generateCode();
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
-  // Upsert code dans verification_codes
   const upsertRes = await fetch(`${supabaseUrl}/rest/v1/verification_codes`, {
     method: "POST",
     headers: {
@@ -34,18 +33,17 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Erreur base de données" });
   }
 
-  // Envoi email via Resend
-  const resendRes = await fetch("https://api.resend.com/emails", {
+  const brevoRes = await fetch("https://api.brevo.com/v3/smtp/email", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+      "api-key": process.env.BREVO_API_KEY,
     },
     body: JSON.stringify({
-      from: "onboarding@resend.dev",
-      to: [normalizedEmail],
+      sender: { name: "Simulateur Grand Oral", email: "jestors12@gmail.com" },
+      to: [{ email: normalizedEmail }],
       subject: "Votre code de connexion — Simulateur Grand Oral",
-      html: `
+      htmlContent: `
         <div style="font-family:system-ui,sans-serif;max-width:480px;margin:40px auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.08)">
           <div style="background:#1C1A2E;padding:28px 32px;text-align:center">
             <div style="font-size:32px;margin-bottom:8px">⚖️</div>
@@ -71,9 +69,9 @@ export default async function handler(req, res) {
     }),
   });
 
-  if (!resendRes.ok) {
-    const errData = await resendRes.json();
-    console.error("Resend error:", errData);
+  if (!brevoRes.ok) {
+    const errData = await brevoRes.json();
+    console.error("Brevo error:", errData);
     return res.status(500).json({ error: "Erreur lors de l'envoi de l'email" });
   }
 
