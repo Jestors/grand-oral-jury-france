@@ -148,7 +148,9 @@ function EmailWithCodeModal({ onConfirmed }) {
           {loading ? "Envoi du code…" : "Recevoir mon code →"}
         </button>
         <p style={{ fontSize: 11, color: "#bbb", marginTop: 14, lineHeight: 1.6 }}>
-          Un code à 6 chiffres vous sera envoyé par email.<br/>Conforme RGPD · Pas de spam.
+          Un code à 6 chiffres vous sera envoyé par email.<br/>
+          <span style={{ color: "#C47B1A" }}>⚠️ Pensez à vérifier vos spams si vous ne le recevez pas.</span><br/>
+          Conforme RGPD · Pas de spam.
         </p>
       </div>
     </div>
@@ -163,7 +165,10 @@ function EmailWithCodeModal({ onConfirmed }) {
           Consultez votre boîte mail :<br/>
           <strong style={{ color: "#1C1A2E" }}>{email}</strong>
         </p>
-        <p style={{ fontSize: 12, color: "#888", marginBottom: 24 }}>Entrez le code à 6 chiffres reçu par email.</p>
+        <p style={{ fontSize: 12, color: "#888", marginBottom: 24 }}>
+          Entrez le code à 6 chiffres reçu par email.<br/>
+          <span style={{ color: "#C47B1A", fontSize: 11 }}>⚠️ Pas reçu ? Vérifiez vos spams.</span>
+        </p>
         <div style={{ display: "flex", gap: 8, justifyContent: "center", marginBottom: 16 }} onPaste={handleCodePaste}>
           {code.map((digit, i) => (
             <input key={i} ref={el => inputRefs.current[i] = el}
